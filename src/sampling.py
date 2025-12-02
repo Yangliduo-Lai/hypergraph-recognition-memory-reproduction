@@ -214,7 +214,6 @@ def main():
     events = load_events_from_csv()
 
     cfg = SamplingConfig(
-        n_attrs=events.shape[1],
         mode="ring",
         edge_type="random_order",
         k_min=2,

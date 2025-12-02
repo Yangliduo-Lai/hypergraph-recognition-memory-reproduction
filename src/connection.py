@@ -205,6 +205,20 @@ class HyperMemory:
                 return True
 
         return False
+    
+    def _sum_link_weights_among(self, active_edges: set[int]) -> float:
+        """
+        计算在 active_edges 所诱导的子图中，所有 link 权重之和。
+        用来做 familiarity 的结构部分（越大说明这些边在记忆里越“常见”）。
+        """
+        if not active_edges:
+            return 0.0
+
+        total = 0.0
+        for (i, j), w in self.link_weights.items():
+            if i in active_edges and j in active_edges:
+                total += w
+        return float(total)
 
     def _dfs_cycle(
         self,
@@ -229,39 +243,36 @@ class HyperMemory:
 
     # ---------- Step 1: familiarity judgment ----------
 
-    def familiarity_judgment(
-        self,
-        hg: EventHypergraph,
-    ) -> Dict:
+    def familiarity_judgment(self, hg) -> dict:
         """
         对一条事件级超图 hg 做熟悉度判断。
 
-        规则：
-
-          1. 对每条事件超边 e_q 找到激活的记忆超边集合：
-               - 匹配规则 = “部分匹配 + 无值冲突”
-
-          2. 如果有任何一条事件超边没有匹配到任何记忆超边 → 直接判定为 new
-
-          3. 否则，将所有激活的记忆超边收集成 activated_edges，
-             如果 activated_edges 在 link 图中能构成一个环（存在至少一个 cycle），
-             则判定为 old，否则为 new。
+        额外返回：
+          - num_active_edges   : 被激活的记忆超边数量
+          - sum_link_weights   : 激活子图中 link 权重之和
+          - familiarity_score  : 一个简单的一维熟悉度分数，用于 ROC：
+                                 familiarity_score = edge_coverage * num_active_edges
+                                                     + sum_link_weights
         """
+        # 记忆还是空的情况
         if not self.edges:
-            # 记忆是空的，肯定是 new
             return {
                 "is_old": False,
                 "matches_per_edge": {eid: [] for eid in hg.hyperedges.keys()},
                 "edge_coverage": 0.0,
                 "link_has_cycle": False,
+                "num_active_edges": 0,
+                "sum_link_weights": 0.0,
+                "familiarity_score": 0.0,
             }
 
-        matches_per_edge: Dict[int, List[Dict]] = {}
+        matches_per_edge: dict[int, list[dict]] = {}
 
         # --- 1) 对每条事件超边找匹配的 memory hyperedges ---
         for e_id in hg.hyperedges.keys():
+            # 事件里的这一条超边对应的节点 key 集合
             q_nodes = self._event_edge_to_nodekeys(hg, e_id)
-            candidates: List[Dict] = []
+            candidates: list[dict] = []
 
             for mem_eid, mem_nodes in self.edges.items():
                 is_match, overlap = self._match_query_to_memory(q_nodes, set(mem_nodes))
@@ -274,21 +285,32 @@ class HyperMemory:
         matched_edges = sum(1 for _, cands in matches_per_edge.items() if cands)
         edge_coverage = matched_edges / total_edges if total_edges > 0 else 0.0
 
-        # --- 2) 如果有任何一条事件超边完全没匹配 → new ---
+        # --- 2) 统计被激活的记忆超边 & link 权重 ---
+        activated_edges: set[int] = set()
+        for _, cands in matches_per_edge.items():
+            for c in cands:
+                activated_edges.add(c["mem_edge_id"])
+
+        num_active_edges = len(activated_edges)
+        sum_link_weights = self._sum_link_weights_among(activated_edges)
+
+        # 简单的一维熟悉度分数：局部覆盖 * 激活边数 + 结构权重
+        familiarity_score = edge_coverage * float(num_active_edges) + sum_link_weights
+
+        # --- 3) old/new 判定逻辑保持原样 ---
+        # 如果有些事件超边根本找不到匹配，直接判 new
         if matched_edges < total_edges:
             return {
                 "is_old": False,
                 "matches_per_edge": matches_per_edge,
                 "edge_coverage": edge_coverage,
                 "link_has_cycle": False,
+                "num_active_edges": num_active_edges,
+                "sum_link_weights": sum_link_weights,
+                "familiarity_score": familiarity_score,
             }
 
-        # --- 3) 所有事件超边都有匹配，看看激活的记忆超边能不能构成一个环 ---
-        activated_edges: Set[int] = set()
-        for _, cands in matches_per_edge.items():
-            for c in cands:
-                activated_edges.add(c["mem_edge_id"])
-
+        # 所有事件超边都有匹配 → 看激活子图中是否存在环
         has_cycle = self._has_cycle_among(activated_edges)
         is_old = has_cycle
 
@@ -297,7 +319,11 @@ class HyperMemory:
             "matches_per_edge": matches_per_edge,
             "edge_coverage": edge_coverage,
             "link_has_cycle": has_cycle,
+            "num_active_edges": num_active_edges,
+            "sum_link_weights": sum_link_weights,
+            "familiarity_score": familiarity_score,
         }
+
 
     # ---------- Step 2: 整合 new 事件到记忆里 ----------
 

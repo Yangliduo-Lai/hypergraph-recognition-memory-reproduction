@@ -7,15 +7,23 @@
 - 通过“原型模式 + 噪声”的方式，让事件流里面有重复结构，
   这样 HyperMemory 这种记忆模型就有东西可以记。
 
-使用示例：
+使用示例（在代码里调用）：
 
     from synthetic_events import EventGeneratorConfig, generate_synthetic_events
 
     cfg = EventGeneratorConfig(n_events=5000)
     events = generate_synthetic_events(cfg)
 
-    # events.shape == (5000, 8)
-    # 然后对每一行事件 x 调用 hm.encode_event(x)
+命令行使用示例：
+
+    # 生成默认 100 条
+    python src/synthetic_events.py
+
+    # 生成 1000 条（位置参数）
+    python src/synthetic_events.py 1000
+
+    # 生成 1000 条（带选项）
+    python src/synthetic_events.py --n-events 1000 --seed 42 --prefix my_events
 """
 
 from dataclasses import dataclass
@@ -71,8 +79,7 @@ def generate_synthetic_events(cfg: EventGeneratorConfig) -> np.ndarray:
     n_attrs = cfg.n_attrs
     n_patterns = cfg.n_patterns
 
-    # 1. 先为每个“模式”生成一个原型向量（prototype）
-    #    prototypes 的形状： (n_patterns, n_attrs)
+    # 1. 为每个“模式”生成一个原型向量（prototype）
     prototypes = np.zeros((n_patterns, n_attrs), dtype=int)
     for p in range(n_patterns):
         for a in range(n_attrs):
@@ -100,7 +107,7 @@ def generate_synthetic_events(cfg: EventGeneratorConfig) -> np.ndarray:
                 # 直接使用当前模式的典型值
                 x[a] = proto[a]
             else:
-                # 加一点噪声：在该维的取值空间里随机选一个（可与 proto 不同）
+                # 在该维的取值空间里随机选一个（可与 proto 不同）
                 x[a] = rng.integers(0, domain_sizes[a])
 
         events[t] = x
@@ -134,12 +141,65 @@ def save_events_to_data_folder(events: np.ndarray, filename_prefix: str = "event
 
 
 if __name__ == "__main__":
-    cfg = EventGeneratorConfig(
-        # 参数修改在这
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="生成 8 维离散事件向量，并保存到 data/synthetic_events_data/ 下。"
     )
+
+    # 可选参数：--n-events / -n
+    parser.add_argument(
+        "--n-events",
+        "-n",
+        dest="n_events",
+        type=int,
+        help="要生成的事件数量（可选，若不给则用位置参数或默认 100）",
+    )
+
+    # 位置参数：n_events_pos（可选）
+    parser.add_argument(
+        "n_events_pos",
+        nargs="?",
+        type=int,
+        help="要生成的事件数量（位置参数，可省略）",
+    )
+
+    # 可选参数：随机种子
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="随机种子（默认 0）",
+    )
+
+    # 可选参数：文件名前缀
+    parser.add_argument(
+        "--prefix",
+        type=str,
+        default="events",
+        help="输出文件名前缀（默认 'events'）",
+    )
+
+    args = parser.parse_args()
+
+    # 决定最终使用的 n_events：
+    # 优先级：--n-events > 位置参数 > 默认 100
+    if args.n_events is not None:
+        n_events = args.n_events
+    elif args.n_events_pos is not None:
+        n_events = args.n_events_pos
+    else:
+        n_events = 100
+
+    cfg = EventGeneratorConfig(
+        n_events=n_events,
+        seed=args.seed,
+    )
+
+    print(f"开始生成 {cfg.n_events} 条事件，seed={cfg.seed} ...")
     evts = generate_synthetic_events(cfg)
     print("events shape:", evts.shape)
     print("前 5 条事件：")
     print(evts[:5])
 
-    save_events_to_data_folder(evts, filename_prefix="events")
+    save_events_to_data_folder(evts, filename_prefix=args.prefix)
