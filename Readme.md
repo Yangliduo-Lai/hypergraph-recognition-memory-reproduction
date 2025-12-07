@@ -38,7 +38,13 @@ python src/sampling.py
 python src/connection.py
 ```
 
-### 4. 可视化
+### 4. 模式补全（Pattern Completion）
+
+```bash
+python src/pattern_completion.py
+```
+
+### 5. 可视化
 
 ```bash
 python src/visualize.py
@@ -46,20 +52,10 @@ python src/visualize.py
 
 # 实验
 
-## 功能正确性的小实验
-
-### 重复事件测试
-
-```bash
-python src/evaluations/repeat_event_test.py
-```
-
 ### 轻微变形的事件
-取一个事件 E，复制一个 E'，只改一两个维度的取值。
-与当前匹配规则的“宽松程度”有关。
 
 ```bash
 # 默认：重复同一个事件 10 次
-python src/evaluations/perturbed_event_test.py
+python src/evaluations/repeat_event_test.py
 ```
 
