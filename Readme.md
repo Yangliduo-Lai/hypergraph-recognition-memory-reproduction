@@ -49,10 +49,8 @@ python src/visualize.py
 ## 功能正确性的小实验
 
 ### 重复事件测试
-重复喂同一事件，检查：`is_old`、激活的 hyperedges 数量、有无环，以及 HyperMemory 的规模增长情况。
 
 ```bash
-# 默认：重复同一个事件 10 次
 python src/evaluations/repeat_event_test.py
 ```
 
